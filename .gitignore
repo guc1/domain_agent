@@ -1,0 +1,19 @@
+# ——— Python artifacts ———
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# ——— Virtual environments ———
+.venv/
+env/
+venv/
+
+# ——— Environment & runtime data ———
+.env
+logs/
+sessions/
+
+# ——— macOS ———
+.DS_Store
