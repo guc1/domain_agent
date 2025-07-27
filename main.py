@@ -1,4 +1,3 @@
-# /Users/yer/Desktop/scrappaa/Domain_checker_ai/main.py
 """
 Main entry point for the Domain Agent CLI application.
 """

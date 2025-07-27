@@ -1,4 +1,3 @@
-# /Domain_checker_ai/store.py
 """
 Session storage module. Handles the "memory" for each user session.
 """
