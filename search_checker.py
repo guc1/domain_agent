@@ -1,10 +1,10 @@
 # domain_status_combined.py
 import os, json, re
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 from openai import OpenAI
 
 # pick up API key
-load_dotenv(find_dotenv())
+load_dotenv("/Users/yer/Desktop/scrappaa/Domain_checker_ai/.env")
 client = OpenAI()
 
 def check_domains(domains):

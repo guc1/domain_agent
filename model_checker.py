@@ -1,3 +1,4 @@
+# /Domain_checker_ai/model_checker.py
 """
 This module contains the function for checking domain availability using
 the OpenAI Responses API with the 'o4-mini' model and web_search tool.
