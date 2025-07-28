@@ -5,9 +5,14 @@ export interface AnswerPayload {
   answers: Record<string, string>;
 }
 
+export interface Question {
+  id: string;
+  text: string;
+}
+
 export interface FeedbackPayload {
   liked?: Record<string, string>;
-  dislike_reason?: string;
+  disliked?: Record<string, string>;
 }
 
 async function callApi(path: string, method: string, body?: any) {
