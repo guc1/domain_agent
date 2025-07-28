@@ -1,4 +1,3 @@
-# /Users/yer/Desktop/scrappaa/Domain_checker_ai/settings.py
 """
 Central configuration file for the Domain Agent system.
 This makes it easy to swap models, change temperatures, or adjust parameters
