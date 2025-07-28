@@ -67,10 +67,11 @@ def run_session():
             print(f"Loop #{loop_count} | Refined Brief: \"{current_brief[:100]}...\"")
             questions = refinement_question_agent.ask(current_brief, last_feedback_summary)
         
+        question_map = {q['id']: q['text'] for q in questions}
         for q in questions:
-            q_and_a[q] = input(f"❓ {q} ") or "no comment"
+            q_and_a[q['id']] = input(f"❓ {q['text']} ") or "no comment"
 
-        final_prompt = prompt_synthesizer.synthesize(current_brief, q_and_a)
+        final_prompt = prompt_synthesizer.synthesize(current_brief, q_and_a, question_map)
         
         # --- Simplified Single-Pass Generation ---
         log.info("Generating a new batch of domain ideas based on your settings...")
