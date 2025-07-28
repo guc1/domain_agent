@@ -60,6 +60,7 @@ class PromptOut(BaseModel):
 class SuggestionsOut(BaseModel):
     available: List[str]
     taken: List[str]
+    history: Dict[str, Dict]
 
 
 class FeedbackIn(BaseModel):
@@ -106,9 +107,14 @@ async def generate_suggestions(sid: str, _=Depends(verify_key)):
     ideas = creator_agent.create(state["prompt"], store.seen(sid))
     store.add(sid, list(ideas.keys()))
     available, taken = checker_agent.filter_available(ideas)
+    store.record_results(sid, available, taken)
     state["available"] = available
     state["taken"] = taken
-    return {"available": list(available.keys()), "taken": list(taken.keys())}
+    return {
+        "available": list(available.keys()),
+        "taken": list(taken.keys()),
+        "history": store.history(sid),
+    }
 
 
 @app.post("/sessions/{sid}/feedback", response_model=RefinementOut)
@@ -138,4 +144,6 @@ def get_state(sid: str, _=Depends(verify_key)):
     state = session_state.get(sid)
     if not state:
         raise HTTPException(status_code=404, detail="Session not found")
-    return state
+    state_copy = dict(state)
+    state_copy["history"] = store.history(sid)
+    return state_copy

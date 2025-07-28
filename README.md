@@ -23,11 +23,11 @@ The service mirrors the interactive CLI in four small steps:
 2. **Submit answers** – `POST /sessions/{id}/answers` with the question/answer map.
    Returns the synthesized prompt used for generation.
 3. **Generate suggestions** – `POST /sessions/{id}/generate`.
-   Returns lists of available and taken domains.
+   Returns lists of available and taken domains along with a history of all names checked in the session.
 4. **Provide feedback** – `POST /sessions/{id}/feedback` with liked domains and/or a dislike reason.
    Returns the refined brief and the next set of questions.
 
-`GET /sessions/{id}/state` can be used for debugging or resuming a UI.
+`GET /sessions/{id}/state` returns the current loop info and the domain history for that session.
 
 ## Next.js Client
 
