@@ -32,19 +32,24 @@ class QuestionAgent:
         self.generation_config = genai.types.GenerationConfig(temperature=cfg["temperature"])
         self.system_prompt = "# ROLE\nYou are a clarifier. Your only task is to ask follow-up questions that will let a\nlater agent generate the best possible domain names.\n\n# RULES\n• Output valid JSON only.\n• Keys must be \"q1\", \"q2\", … in order.\n• No markdown fences or prose.\n• Ask 2–10 questions – the fewest that fully clarify the brief.\n\n# GUIDELINES  (topics you may cover)\n• Brand / company match                • Desired TLD(s)\n• Tone or vibe                         • Length limits\n• Keywords to include / avoid          • Real-word vs. abstract\n• Examples the user likes (but are taken)\n• Legal / geographic constraints"
 
-    def ask(self, brief: str) -> List[str]:
+    def ask(self, brief: str) -> List[Dict[str, str]]:
         prompt = f"{self.system_prompt}\n\nUSER'S INITIAL BRIEF: \"{brief}\""
         log.debug("--- START QuestionAgent PROMPT ---\n%s\n--- END QuestionAgent PROMPT ---", prompt)
         try:
             response = self.model.generate_content(prompt, generation_config=self.generation_config)
             log.debug("--- START QuestionAgent RAW RESPONSE ---\n%s\n--- END QuestionAgent RAW RESPONSE ---", response.text)
             data = json.loads(_clean_json_response(response.text))
-            questions = [data[key] for key in sorted(data.keys())]
+            questions = [
+                {"id": key, "text": data[key]} for key in sorted(data.keys())
+            ]
             log.info(f"Generated {len(questions)} initial questions.")
             return questions
         except Exception as e:
             log.warning(f"QuestionAgent failed: {e}. Falling back.")
-            return ["Primary purpose?", "Target audience?"]
+            return [
+                {"id": "q1", "text": "Primary purpose?"},
+                {"id": "q2", "text": "Target audience?"},
+            ]
 
 class PromptSynthesizerAgent:
     """Takes a brief and Q&A and synthesizes a high-quality narrative prompt."""
@@ -54,13 +59,22 @@ class PromptSynthesizerAgent:
         self.system_prompt = "You are a master prompt engineer. Your task is to synthesize a user's brief and a set of questions and answers into a single, cohesive, and well-written narrative brief. This new brief will be given to a creative AI to generate domain names. Transform the raw Q&A into a descriptive paragraph. Infer the user's core desires from their answers. Only use the information provided; do not add new details."
         self.ignore_answers = {'no', 'none', 'n/a', '', 'no comment'}
 
-    def synthesize(self, brief: str, q_and_a: Dict[str, str]) -> str:
-        filtered_qa = {q: a for q, a in q_and_a.items() if a.lower().strip() not in self.ignore_answers}
-        if not filtered_qa:
+    def synthesize(self, brief: str, answers: Dict[str, str], question_map: Dict[str, str]) -> str:
+        ordered_ids = sorted(question_map.keys(), key=lambda k: int(k[1:]))
+        pairs = []
+        for qid in ordered_ids:
+            answer = answers.get(qid, "").strip()
+            if answer.lower() in self.ignore_answers:
+                continue
+            question_text = question_map.get(qid)
+            if question_text:
+                pairs.append((question_text, answer))
+
+        if not pairs:
             log.info("No meaningful answers provided, using initial brief only.")
             return brief
 
-        qa_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in filtered_qa.items()])
+        qa_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in pairs])
         prompt = f"{self.system_prompt}\n\n# CORE BRIEF:\n{brief}\n\n# USER'S ANSWERS:\n{qa_text}\n\nSynthesize this into a paragraph."
         log.debug("--- START PromptSynthesizerAgent PROMPT ---\n%s\n--- END PromptSynthesizerAgent PROMPT ---", prompt)
         try:
@@ -249,19 +263,25 @@ class RefinementQuestionAgent:
         self.model = genai.GenerativeModel(cfg["model"])
         self.generation_config = genai.types.GenerationConfig(temperature=cfg["temperature"])
         self.system_prompt = "# ROLE\nYou are a domain name strategy consultant..."
-    def ask(self, refined_brief: str, feedback_summary: str) -> List[str]:
+    def ask(self, refined_brief: str, feedback_summary: str) -> List[Dict[str, str]]:
         prompt = (f"{self.system_prompt}\n\n# PREVIOUS FEEDBACK SUMMARY\n{feedback_summary}\n\n# NEW REFINED GOAL\n\"{refined_brief}\"\n\nBased on all the above, ask your two follow-up questions now.")
         log.debug("--- START RefinementQuestionAgent PROMPT ---\n%s\n--- END RefinementQuestionAgent PROMPT ---", prompt)
         try:
             response = self.model.generate_content(prompt, generation_config=self.generation_config)
             log.debug("--- START RefinementQuestionAgent RAW RESPONSE ---\n%s\n--- END RefinementQuestionAgent RAW RESPONSE ---", response.text)
             data = json.loads(_clean_json_response(response.text))
-            questions = [data["q1"], data["q2"]]
+            questions = [
+                {"id": "q1", "text": data["q1"]},
+                {"id": "q2", "text": data["q2"]},
+            ]
             log.info(f"Generated {len(questions)} refinement questions.")
             return questions
         except Exception as e:
             log.warning(f"RefinementQuestionAgent failed: {e}. Falling back.")
-            return ["What specific element did you like most?", "What was missing?"]
+            return [
+                {"id": "q1", "text": "What specific element did you like most?"},
+                {"id": "q2", "text": "What was missing?"},
+            ]
 
 class DirectionistAgent:
     """Refines the brief using all feedback."""

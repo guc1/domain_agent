@@ -16,7 +16,7 @@ class SessionStore:
 
     def new(self) -> str:
         sid = f"{int(time.time())}_{uuid.uuid4().hex[:6]}"
-        self._write(sid, {"suggested": [], "history": {}})
+        self._write(sid, {"suggested": [], "history": {}, "question_map": {}})
         log.info(f"New session started: {sid}")
         return sid
 
@@ -48,19 +48,27 @@ class SessionStore:
     def history(self, sid: str) -> dict:
         return self._read(sid).get("history", {})
 
+    def set_question_map(self, sid: str, qmap: dict[str, str]) -> None:
+        blob = self._read(sid)
+        blob["question_map"] = qmap
+        self._write(sid, blob)
+
+    def get_question_map(self, sid: str) -> dict[str, str]:
+        return self._read(sid).get("question_map", {})
+
     def _path(self, sid: str) -> str:
         root = settings.SESSION_FILE_DIR or tempfile.gettempdir()
         return os.path.join(root, f"session_{sid}.json")
 
     def _read(self, sid: str) -> dict:
         if sid not in self._cache and not settings.PERSIST_SESSIONS_TO_FILE:
-            self._cache[sid] = {"suggested": [], "history": {}}
+            self._cache[sid] = {"suggested": [], "history": {}, "question_map": {}}
         if settings.PERSIST_SESSIONS_TO_FILE:
             try:
                 with open(self._path(sid)) as fp:
                     return json.load(fp)
             except FileNotFoundError:
-                return {"suggested": [], "history": {}}
+                return {"suggested": [], "history": {}, "question_map": {}}
         return self._cache[sid]
 
     def _write(self, sid: str, blob: dict):

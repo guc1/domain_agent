@@ -5,6 +5,11 @@ export interface AnswerPayload {
   answers: Record<string, string>;
 }
 
+export interface Question {
+  id: string;
+  text: string;
+}
+
 export interface FeedbackPayload {
   liked?: Record<string, string>;
   dislike_reason?: string;

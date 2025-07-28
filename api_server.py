@@ -44,13 +44,24 @@ class StartSessionIn(BaseModel):
     initial_brief: str
 
 
+class Question(BaseModel):
+    id: str
+    text: str
+
 class StartSessionOut(BaseModel):
     session_id: str
-    questions: List[str]
+    questions: List[Question]
 
 
 class AnswerIn(BaseModel):
     answers: Dict[str, str]
+    liked_domains: Optional[Dict[str, str]] = None
+    dislike_reason: Optional[str] = None
+
+class AnswerOut(BaseModel):
+    available: Dict[str, str]
+    taken: Dict[str, str]
+    next_questions: Optional[List[Question]] = None
 
 
 class PromptOut(BaseModel):
@@ -70,18 +81,20 @@ class FeedbackIn(BaseModel):
 
 class RefinementOut(BaseModel):
     refined_brief: str
-    questions: List[str]
+    questions: List[Question]
 
 
 @app.post("/sessions", response_model=StartSessionOut)
 def start_session(payload: StartSessionIn, _=Depends(verify_key)):
     sid = store.new()
     questions = question_agent.ask(payload.initial_brief)
+    qmap = {q["id"]: q["text"] for q in questions}
     session_state[sid] = {
         "brief": payload.initial_brief,
         "loop": 1,
-        "questions": questions,
+        "question_map": qmap,
     }
+    store.set_question_map(sid, qmap)
     return {"session_id": sid, "questions": questions}
 
 
@@ -90,7 +103,8 @@ def submit_answers(sid: str, payload: AnswerIn, _=Depends(verify_key)):
     state = session_state.get(sid)
     if not state:
         raise HTTPException(status_code=404, detail="Session not found")
-    prompt = prompt_synthesizer.synthesize(state["brief"], payload.answers)
+    qmap = state.get("question_map", {})
+    prompt = prompt_synthesizer.synthesize(state["brief"], payload.answers, qmap)
     state["prompt"] = prompt
     state["answers"] = payload.answers
     return {"prompt": prompt}
@@ -131,7 +145,9 @@ def give_feedback(sid: str, payload: FeedbackIn, _=Depends(verify_key)):
     state["brief"] = new_brief
     state["loop"] = state.get("loop", 1) + 1
     questions = refinement_question_agent.ask(new_brief, summary)
-    state["questions"] = questions
+    qmap = {q["id"]: q["text"] for q in questions}
+    state["question_map"] = qmap
+    store.set_question_map(sid, qmap)
     # Clear prompt and suggestions for next loop
     state.pop("prompt", None)
     state.pop("available", None)
