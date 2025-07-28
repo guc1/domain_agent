@@ -3,32 +3,42 @@ export const DOMAIN_API_KEY = process.env.DOMAIN_API_KEY!;
 
 export interface AnswerPayload {
   answers: Record<string, string>;
-  liked_domains?: Record<string, string>;
+}
+
+export interface FeedbackPayload {
+  liked?: Record<string, string>;
   dislike_reason?: string;
 }
 
-export async function startSession(brief: string) {
-  const res = await fetch(`${DOMAIN_API_URL}/session/start`, {
-    method: 'POST',
+async function callApi(path: string, method: string, body?: any) {
+  const res = await fetch(`${DOMAIN_API_URL}${path}`, {
+    method,
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': DOMAIN_API_KEY,
     },
-    body: JSON.stringify({ brief }),
+    body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error('startSession failed');
+  if (!res.ok) throw new Error(`API ${path} failed`);
   return res.json();
 }
 
-export async function answerSession(sessionId: string, payload: AnswerPayload) {
-  const res = await fetch(`${DOMAIN_API_URL}/session/${sessionId}/answer`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': DOMAIN_API_KEY,
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('answerSession failed');
-  return res.json();
+export function startSession(initialBrief: string) {
+  return callApi('/sessions', 'POST', { initial_brief: initialBrief });
+}
+
+export function submitAnswers(sessionId: string, payload: AnswerPayload) {
+  return callApi(`/sessions/${sessionId}/answers`, 'POST', payload);
+}
+
+export function generateSuggestions(sessionId: string) {
+  return callApi(`/sessions/${sessionId}/generate`, 'POST');
+}
+
+export function sendFeedback(sessionId: string, payload: FeedbackPayload) {
+  return callApi(`/sessions/${sessionId}/feedback`, 'POST', payload);
+}
+
+export function getState(sessionId: string) {
+  return callApi(`/sessions/${sessionId}/state`, 'GET');
 }
