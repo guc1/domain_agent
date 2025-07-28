@@ -2,6 +2,7 @@
 Main entry point for the Domain Agent CLI application.
 """
 import os, sys, logging, time
+from typing import Dict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -67,10 +68,11 @@ def run_session():
             print(f"Loop #{loop_count} | Refined Brief: \"{current_brief[:100]}...\"")
             questions = refinement_question_agent.ask(current_brief, last_feedback_summary)
         
+        question_map = {q['id']: q['text'] for q in questions}
         for q in questions:
-            q_and_a[q] = input(f"❓ {q} ") or "no comment"
+            q_and_a[q['id']] = input(f"❓ {q['text']} ") or "no comment"
 
-        final_prompt = prompt_synthesizer.synthesize(current_brief, q_and_a)
+        final_prompt = prompt_synthesizer.synthesize(current_brief, q_and_a, question_map)
         
         # --- Simplified Single-Pass Generation ---
         log.info("Generating a new batch of domain ideas based on your settings...")
@@ -92,9 +94,21 @@ def run_session():
                 break
             
             # Auto-generate feedback to try and un-stick the generator for the next loop.
-            dislike_reason = f"No available domains were found. The following ideas were all taken: {', '.join(taken_domains.keys())}" if taken_domains else "No available domains were found, and the generator returned few ideas."
-            log.info(f"Automatically providing feedback to refine brief: {dislike_reason}")
-            current_brief, last_feedback_summary = directionist_agent.refine_brief(initial_brief, {}, list(taken_domains.keys()), dislike_reason)
+            auto_reason = (
+                f"No available domains were found. The following ideas were all taken: {', '.join(taken_domains.keys())}"
+                if taken_domains
+                else "No available domains were found, and the generator returned few ideas."
+            )
+            log.info(
+                f"Automatically providing feedback to refine brief: {auto_reason}"
+            )
+            disliked_map = {name: auto_reason for name in taken_domains.keys()}
+            current_brief, last_feedback_summary = directionist_agent.refine_brief(
+                initial_brief,
+                {},
+                list(taken_domains.keys()),
+                disliked_map,
+            )
             loop_count += 1
             print("Trying again with a refined approach...")
             continue
@@ -117,19 +131,39 @@ def run_session():
             print("\n👋 Session ended. Thank you!"); break
 
         liked_indices = [int(i.strip()) - 1 for i in choice.split(',') if i.strip().isdigit()]
-        liked_domains_map, dislike_reason = {}, None
-        
-        if not liked_indices:
-            dislike_reason = input("It looks like none of those worked. What did you dislike about them? ") or "User did not provide a reason."
-        else:
-            for i in liked_indices:
-                if 0 <= i < len(final_list_to_show):
+        liked_domains_map: Dict[str, str] = {}
+        disliked_domains_map: Dict[str, str] = {}
+
+        for i in liked_indices:
+            if 0 <= i < len(final_list_to_show):
+                domain_name, _ = final_list_to_show[i]
+                liked_domains_map[domain_name] = (
+                    input(f"  Why did you like '{domain_name}'? (Optional) ")
+                    or "No specific reason given."
+                )
+
+        remaining_indices = set(range(len(final_list_to_show))) - set(liked_indices)
+        if remaining_indices:
+            dislike_input = input("Enter numbers of domains you disliked (optional): ")
+            disliked_indices = [int(i.strip()) - 1 for i in dislike_input.split(',') if i.strip().isdigit()]
+            for i in disliked_indices:
+                if i in remaining_indices:
                     domain_name, _ = final_list_to_show[i]
-                    liked_domains_map[domain_name] = input(f"  Why did you like '{domain_name}'? (Optional) ") or "No specific reason given."
-        
-        log.info(f"User liked: {list(liked_domains_map.keys())}. Dislike reason: {dislike_reason}")
+                    disliked_domains_map[domain_name] = (
+                        input(f"  Why did you dislike '{domain_name}'? (Optional) ")
+                        or "No specific reason given."
+                    )
+
+        log.info(
+            f"User liked: {list(liked_domains_map.keys())}. Disliked: {list(disliked_domains_map.keys())}"
+        )
         # Use the list of domains that were taken in this specific loop for feedback
-        current_brief, last_feedback_summary = directionist_agent.refine_brief(initial_brief, liked_domains_map, list(taken_domains.keys()), dislike_reason)
+        current_brief, last_feedback_summary = directionist_agent.refine_brief(
+            initial_brief,
+            liked_domains_map,
+            list(taken_domains.keys()),
+            disliked_domains_map,
+        )
         loop_count += 1
 
 if __name__ == "__main__":
