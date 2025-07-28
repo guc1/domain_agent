@@ -1,12 +1,11 @@
 import logging
-import os
+from typing import Dict, List, Optional
+
 from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel
-from typing import Dict, List, Optional
-
-load_dotenv()
 
 import settings
 from store import SessionStore
@@ -32,7 +31,8 @@ creator_agent = CreatorAgent()
 checker_agent = CheckerAgent()
 directionist_agent = DirectionistAgent()
 
-session_meta: Dict[str, dict] = {}
+# In-memory session cache
+session_state: Dict[str, Dict] = {}
 
 
 def verify_key(x_api_key: str = Header(...)):
@@ -40,79 +40,102 @@ def verify_key(x_api_key: str = Header(...)):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
-class StartRequest(BaseModel):
-    brief: str
+class StartSessionIn(BaseModel):
+    initial_brief: str
 
 
-class StartResponse(BaseModel):
+class StartSessionOut(BaseModel):
     session_id: str
     questions: List[str]
 
 
-class AnswerRequest(BaseModel):
+class AnswerIn(BaseModel):
     answers: Dict[str, str]
-    liked_domains: Optional[Dict[str, str]] = None
+
+
+class PromptOut(BaseModel):
+    prompt: str
+
+
+class SuggestionsOut(BaseModel):
+    available: List[str]
+    taken: List[str]
+
+
+class FeedbackIn(BaseModel):
+    liked: Optional[Dict[str, str]] = None
     dislike_reason: Optional[str] = None
 
 
-class AnswerResponse(BaseModel):
-    available: Dict[str, str]
-    taken: Dict[str, str]
-    next_questions: List[str]
+class RefinementOut(BaseModel):
+    refined_brief: str
+    questions: List[str]
 
 
-@app.post("/session/start", response_model=StartResponse)
-def start(req: StartRequest, _=Depends(verify_key)):
+@app.post("/sessions", response_model=StartSessionOut)
+def start_session(payload: StartSessionIn, _=Depends(verify_key)):
     sid = store.new()
-    meta = {
-        "initial_brief": req.brief,
-        "current_brief": req.brief,
-        "last_feedback_summary": "",
-        "loop_count": 1,
-        "last_taken_domains": [],
+    questions = question_agent.ask(payload.initial_brief)
+    session_state[sid] = {
+        "brief": payload.initial_brief,
+        "loop": 1,
+        "questions": questions,
     }
-    questions = question_agent.ask(req.brief)
-    meta["last_questions"] = questions
-    session_meta[sid] = meta
-    return StartResponse(session_id=sid, questions=questions)
+    return {"session_id": sid, "questions": questions}
 
 
-@app.post("/session/{session_id}/answer", response_model=AnswerResponse)
-def answer(session_id: str, req: AnswerRequest, _=Depends(verify_key)):
-    if session_id not in session_meta:
+@app.post("/sessions/{sid}/answers", response_model=PromptOut)
+def submit_answers(sid: str, payload: AnswerIn, _=Depends(verify_key)):
+    state = session_state.get(sid)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    prompt = prompt_synthesizer.synthesize(state["brief"], payload.answers)
+    state["prompt"] = prompt
+    state["answers"] = payload.answers
+    return {"prompt": prompt}
+
+
+@app.post("/sessions/{sid}/generate", response_model=SuggestionsOut)
+async def generate_suggestions(sid: str, _=Depends(verify_key)):
+    state = session_state.get(sid)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not state.get("prompt"):
+        raise HTTPException(status_code=400, detail="No prompt. Submit answers first")
+
+    ideas = creator_agent.create(state["prompt"], store.seen(sid))
+    store.add(sid, list(ideas.keys()))
+    available, taken = checker_agent.filter_available(ideas)
+    state["available"] = available
+    state["taken"] = taken
+    return {"available": list(available.keys()), "taken": list(taken.keys())}
+
+
+@app.post("/sessions/{sid}/feedback", response_model=RefinementOut)
+def give_feedback(sid: str, payload: FeedbackIn, _=Depends(verify_key)):
+    state = session_state.get(sid)
+    if not state:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    meta = session_meta[session_id]
-
-    # Refine brief using feedback from previous loop
-    liked = req.liked_domains or {}
-    dislike = req.dislike_reason
+    liked = payload.liked or {}
+    dislike = payload.dislike_reason
     new_brief, summary = directionist_agent.refine_brief(
-        meta["current_brief"], liked, meta["last_taken_domains"], dislike
+        state["brief"], liked, list(state.get("taken", {}).keys()), dislike
     )
-    meta["current_brief"] = new_brief
-    meta["last_feedback_summary"] = summary
-
-    final_prompt = prompt_synthesizer.synthesize(new_brief, req.answers)
-    ideas = creator_agent.create(final_prompt, store.seen(session_id))
-    store.add(session_id, list(ideas.keys()))
-
-    if ideas:
-        available, taken = checker_agent.filter_available(ideas)
-    else:
-        available, taken = {}, {}
-
-    if not available:
-        meta["failures"] = meta.get("failures", 0) + 1
-        if meta["failures"] >= settings.MAX_LOOP_FAILURES:
-            raise HTTPException(status_code=400, detail="Too many failures")
-    else:
-        meta["failures"] = 0
-
-    meta["last_taken_domains"] = list(taken.keys())
-    meta["loop_count"] += 1
-
+    state["brief"] = new_brief
+    state["loop"] = state.get("loop", 1) + 1
     questions = refinement_question_agent.ask(new_brief, summary)
-    meta["last_questions"] = questions
+    state["questions"] = questions
+    # Clear prompt and suggestions for next loop
+    state.pop("prompt", None)
+    state.pop("available", None)
+    state.pop("taken", None)
+    return {"refined_brief": new_brief, "questions": questions}
 
-    return AnswerResponse(available=available, taken=taken, next_questions=questions)
+
+@app.get("/sessions/{sid}/state")
+def get_state(sid: str, _=Depends(verify_key)):
+    state = session_state.get(sid)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return state

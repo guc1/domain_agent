@@ -4,6 +4,8 @@ Contains all AI Agent implementations for the Domain Generator.
 from __future__ import annotations
 import os, json, time, re, logging
 from typing import List, Dict, Tuple, Optional
+from dotenv import load_dotenv
+load_dotenv()
 
 import google.generativeai as genai
 from openai import OpenAI
