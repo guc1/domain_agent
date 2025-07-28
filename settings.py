@@ -3,6 +3,10 @@ Central configuration file for the Domain Agent system.
 This makes it easy to swap models, change temperatures, or adjust parameters
 without touching the core application logic.
 """
+import os
+
+# API key required by the FastAPI server
+API_KEY = os.getenv("DOMAIN_API_KEY")
 
 # --- Model & Agent Configuration ---
 QUESTION_AGENT_CONFIG = {
@@ -64,6 +68,6 @@ DIRECTIONIST_AGENT_CONFIG = {
 MAX_LOOP_FAILURES = 20 # The number of consecutive loops with no available domains before aborting.
 
 # --- Session & Logging Configuration ---
-PERSIST_SESSIONS_TO_FILE = False
+PERSIST_SESSIONS_TO_FILE = True
 SESSION_FILE_DIR = "sessions"
 LOGS_DIR = "logs"
