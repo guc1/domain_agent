@@ -43,3 +43,18 @@ DOMAIN_API_KEY=<same key as server>
 
 Use the helpers in `nextjs/lib/domainClient.ts` to interact with the API.
 Questions are returned with stable `id` fields; use these IDs when sending answer payloads.
+
+### Simple Chat UI
+
+`nextjs/app/page.tsx` implements a very small chat-style interface that steps
+through the API flow. Start the API server and then run a Next.js dev server in
+the `nextjs` folder to try it out:
+
+```bash
+npm install
+npm run dev
+```
+
+Enter an initial brief in the input box and answer each question as it appears.
+When all questions have been answered, the UI will display any available and
+taken domain suggestions returned by the backend.
