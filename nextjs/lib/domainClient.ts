@@ -47,3 +47,18 @@ export function sendFeedback(sessionId: string, payload: FeedbackPayload) {
 export function getState(sessionId: string) {
   return callApi(`/sessions/${sessionId}/state`, 'GET');
 }
+
+export interface SessionSettings {
+  local_dev: boolean;
+  creators: string[];
+  generation_count: number;
+  show_logs: boolean;
+}
+
+export function setSettings(sessionId: string, payload: SessionSettings) {
+  return callApi(`/sessions/${sessionId}/settings`, 'POST', payload);
+}
+
+export function getSettings(sessionId: string) {
+  return callApi(`/sessions/${sessionId}/settings`, 'GET');
+}

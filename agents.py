@@ -143,19 +143,32 @@ class CreatorAgent:
             log.error(f"CreatorAgent ({tag}) failed: {e}")
             return {}
             
-    def create(self, prompt: str, previously_seen: set) -> Dict[str, str]:
-        # This method no longer splits a passed-in count.
-        # It reads the generation count for each creator directly from its configuration.
-        count_a = settings.CREATOR_A_CONFIG.get("generation_count", 0)
-        count_b = settings.CREATOR_B_CONFIG.get("generation_count", 0)
-        count_c = settings.CREATOR_C_CONFIG.get("generation_count", 0)
+    def create(
+        self,
+        prompt: str,
+        previously_seen: set,
+        creators: Optional[List[str]] = None,
+        generation_count: Optional[int] = None,
+    ) -> Dict[str, str]:
+        """Generate domain ideas using the selected creator models."""
 
-        ideas_a = self._generate_batch(prompt, settings.CREATOR_A_CONFIG, "CreatorA", count_a)
-        ideas_b = self._generate_batch(prompt, settings.CREATOR_B_CONFIG, "CreatorB", count_b)
-        ideas_c = self._generate_batch(prompt, settings.CREATOR_C_CONFIG, "CreatorC", count_c)
-        
-        all_ideas = {**ideas_a, **ideas_b, **ideas_c}
-        return {name: source for name, source in all_ideas.items() if name not in previously_seen}
+        creators = creators or ["A", "B", "C"]
+
+        def run(tag: str, cfg: dict) -> Dict[str, str]:
+            count = generation_count if generation_count is not None else cfg.get(
+                "generation_count", 0
+            )
+            return self._generate_batch(prompt, cfg, f"Creator{tag}", count)
+
+        ideas = {}
+        if "A" in creators:
+            ideas.update(run("A", settings.CREATOR_A_CONFIG))
+        if "B" in creators:
+            ideas.update(run("B", settings.CREATOR_B_CONFIG))
+        if "C" in creators:
+            ideas.update(run("C", settings.CREATOR_C_CONFIG))
+
+        return {name: src for name, src in ideas.items() if name not in previously_seen}
 
 class RDAPBootstrap:
     """Finds and caches the correct RDAP server for a given TLD."""
