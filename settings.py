@@ -71,3 +71,18 @@ MAX_LOOP_FAILURES = 20 # The number of consecutive loops with no available domai
 PERSIST_SESSIONS_TO_FILE = True
 SESSION_FILE_DIR = "sessions"
 LOGS_DIR = "logs"
+
+# --- Domain Generation Goals ---
+# How many available domains the checker should aim to find in one generate
+# request. The API will loop locally until this many free domains are
+# discovered or until MAX_GENERATION_ATTEMPTS is reached.
+MIN_AVAILABLE_DOMAINS = int(os.getenv("MIN_AVAILABLE_DOMAINS", "3"))
+
+# Safety cap on how many batches will be generated/checked per request.
+MAX_GENERATION_ATTEMPTS = int(os.getenv("MAX_GENERATION_ATTEMPTS", "5"))
+
+# --- Client Display Options ---
+# When False, the interactive client will suppress verbose logs such as the
+# prompt, taken domains and refined briefs.  This is useful for a more
+# streamlined user experience.
+SHOW_LOGS = os.getenv("SHOW_LOGS", "1") != "0"

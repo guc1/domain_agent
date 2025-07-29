@@ -5,6 +5,9 @@ API_URL = os.getenv("DOMAIN_API_URL", "http://localhost:8000")
 API_KEY = os.getenv("DOMAIN_API_KEY")
 HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
+# Toggle whether verbose logs (prompt, taken domains, etc.) should be displayed
+SHOW_LOGS = os.getenv("SHOW_LOGS", "1") != "0"
+
 
 def post(path: str, payload=None):
     url = f"{API_URL}{path}"
@@ -32,31 +35,37 @@ def main():
         answers = ask_questions(questions)
         ans_out = post(f"/sessions/{session_id}/answers", {"answers": answers})
         prompt = ans_out["prompt"]
-        print("\nPrompt:\n" + prompt)
+        if SHOW_LOGS:
+            print("\nPrompt:\n" + prompt)
 
         gen = post(f"/sessions/{session_id}/generate")
         print("\nAvailable:")
         for d in gen["available"]:
             print(" -", d)
-        print("Taken:")
-        for d in gen["taken"]:
-            print(" -", d)
+        if SHOW_LOGS:
+            print("Taken:")
+            for d in gen["taken"]:
+                print(" -", d)
+
+        cont = input("Continue? (y/N) ").strip().lower()
+        if cont != "y":
+            break
 
         liked, disliked = {}, {}
         for d in gen["available"]:
-            reason = input(f"Like '{d}'? (optional reason) ")
-            if reason:
+            like = input(f"Do you like '{d}'? (y/N) ").strip().lower()
+            reason = input("  Reason? ") or ""
+            if like == "y":
                 liked[d] = reason
-        for d in gen["taken"]:
-            reason = input(f"Dislike '{d}'? (optional reason) ")
-            if reason:
+            else:
                 disliked[d] = reason
 
         fb = post(
             f"/sessions/{session_id}/feedback",
             {"liked": liked, "disliked": disliked},
         )
-        print("\nRefined Brief:\n" + fb["refined_brief"])
+        if SHOW_LOGS:
+            print("\nRefined Brief:\n" + fb["refined_brief"])
         questions = fb["questions"]
 
         clar = post("/clarify", {"prompt": prompt})
@@ -73,11 +82,8 @@ def main():
             },
         )["prompt"]
         prompt = new_prompt
-        print("\nNew Prompt:\n" + prompt)
-
-        cont = input("Another loop? (y/N) ").strip().lower()
-        if cont != "y":
-            break
+        if SHOW_LOGS:
+            print("\nNew Prompt:\n" + prompt)
 
 
 if __name__ == "__main__":

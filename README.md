@@ -14,6 +14,14 @@ uvicorn api_server:app
 
 All requests must include `X-API-Key` set to the value of `DOMAIN_API_KEY`.
 
+### Environment Variables
+
+Several optional variables control the behaviour of generation:
+
+- `MIN_AVAILABLE_DOMAINS` – how many free domains the API should try to find per request (default `3`).
+- `MAX_GENERATION_ATTEMPTS` – safety cap on how many batches are generated while searching for free domains.
+- `SHOW_LOGS` – when set to `0`, the interactive client hides verbose output such as prompts and taken domains.
+
 ## API Overview
 
 The service mirrors the interactive CLI in four small steps:
