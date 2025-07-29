@@ -5,6 +5,8 @@ import {
   generateSuggestions,
   sendFeedback,
   getState,
+  setSettings,
+  getSettings,
 } from '@/lib/domainClient';
 
 export async function POST(req: NextRequest) {
@@ -28,6 +30,14 @@ export async function POST(req: NextRequest) {
     }
     if (body.action === 'state') {
       return NextResponse.json(await getState(body.sessionId));
+    }
+    if (body.action === 'settings') {
+      return NextResponse.json(
+        await setSettings(body.sessionId, body.payload)
+      );
+    }
+    if (body.action === 'get_settings') {
+      return NextResponse.json(await getSettings(body.sessionId));
     }
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
   } catch (err: any) {
