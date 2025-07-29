@@ -31,6 +31,16 @@ The service mirrors the interactive CLI in four small steps:
 
 `GET /sessions/{id}/state` returns the current loop info and the domain history for that session.
 
+Additional helpers:
+
+- `POST /clarify` with `{ "prompt": "..." }` returns two clarifying
+  questions.
+- `POST /combine` combines the previous prompt and user feedback
+  into a new prompt. The payload is `{ "previous_prompt": "...",
+  "answers": {...}, "question_map": {...}, "liked_domains": {...},
+  "disliked_domains": {...}, "taken_domains": ["..."] }` and the
+  response contains the refined `prompt`.
+
 ## Next.js Client
 
 The `nextjs/` directory contains a minimal client example. Configure
