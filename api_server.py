@@ -4,6 +4,8 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 load_dotenv()
 
+log = logging.getLogger("domain-agent.api")
+
 from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel
 
@@ -143,10 +145,24 @@ async def generate_suggestions(sid: str, _=Depends(verify_key)):
     if not state.get("prompt"):
         raise HTTPException(status_code=400, detail="No prompt. Submit answers first")
 
-    ideas = creator_agent.create(state["prompt"], store.seen(sid))
-    store.add(sid, list(ideas.keys()))
-    available, taken = checker_agent.filter_available(ideas)
-    store.record_results(sid, available, taken)
+    desired = settings.MIN_AVAILABLE_DOMAINS
+    max_attempts = settings.MAX_GENERATION_ATTEMPTS
+
+    available, taken = {}, {}
+    attempts = 0
+
+    while len(available) < desired and attempts < max_attempts:
+        attempts += 1
+        log.info(f"Generation attempt {attempts} for session {sid}")
+        ideas = creator_agent.create(state["prompt"], store.seen(sid))
+        store.add(sid, list(ideas.keys()))
+        avail_batch, taken_batch = checker_agent.filter_available(ideas)
+        if taken_batch:
+            log.info("Taken domains: %s", ", ".join(taken_batch.keys()))
+        available.update(avail_batch)
+        taken.update(taken_batch)
+        store.record_results(sid, avail_batch, taken_batch)
+
     state["available"] = available
     state["taken"] = taken
     return {
