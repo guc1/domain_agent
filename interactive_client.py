@@ -68,23 +68,6 @@ def main():
             print("\nRefined Brief:\n" + fb["refined_brief"])
         questions = fb["questions"]
 
-        clar = post("/clarify", {"prompt": prompt})
-        clar_answers = ask_questions(clar["questions"])
-        new_prompt = post(
-            "/combine",
-            {
-                "previous_prompt": prompt,
-                "answers": clar_answers,
-                "question_map": {q["id"]: q["text"] for q in clar["questions"]},
-                "liked_domains": liked,
-                "disliked_domains": disliked,
-                "taken_domains": gen["taken"],
-            },
-        )["prompt"]
-        prompt = new_prompt
-        if SHOW_LOGS:
-            print("\nNew Prompt:\n" + prompt)
-
 
 if __name__ == "__main__":
     main()
