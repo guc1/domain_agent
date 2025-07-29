@@ -76,6 +76,13 @@ class SuggestionsOut(BaseModel):
     history: Dict[str, Dict]
 
 
+class SettingsPayload(BaseModel):
+    local_dev: bool = False
+    creators: List[str] = ["A", "B", "C"]
+    generation_count: int = 1
+    show_logs: bool = False
+
+
 class FeedbackIn(BaseModel):
     liked: Optional[Dict[str, str]] = None
     disliked: Optional[Dict[str, str]] = None
@@ -97,6 +104,7 @@ def start_session(payload: StartSessionIn, _=Depends(verify_key)):
         "brief": payload.initial_brief,
         "loop": 1,
         "question_map": qmap,
+        "settings": SettingsPayload().dict(),
     }
     store.set_question_map(sid, qmap)
     return {"session_id": sid, "questions": questions}
@@ -128,10 +136,17 @@ async def generate_suggestions(sid: str, _=Depends(verify_key)):
     available, taken = {}, {}
     attempts = 0
 
+    sess_settings = state.get("settings", SettingsPayload().dict())
+
     while len(available) < desired and attempts < max_attempts:
         attempts += 1
         log.info(f"Generation attempt {attempts} for session {sid}")
-        ideas = creator_agent.create(state["prompt"], store.seen(sid))
+        ideas = creator_agent.create(
+            state["prompt"],
+            store.seen(sid),
+            creators=sess_settings.get("creators"),
+            generation_count=sess_settings.get("generation_count"),
+        )
         store.add(sid, list(ideas.keys()))
         avail_batch, taken_batch = checker_agent.filter_available(ideas)
         if taken_batch:
@@ -181,5 +196,23 @@ def get_state(sid: str, _=Depends(verify_key)):
     state_copy = dict(state)
     state_copy["history"] = store.history(sid)
     return state_copy
+
+
+@app.post("/sessions/{sid}/settings", response_model=SettingsPayload)
+def update_settings(sid: str, payload: SettingsPayload, _=Depends(verify_key)):
+    state = session_state.get(sid)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    state["settings"] = payload.dict()
+    return state["settings"]
+
+
+@app.get("/sessions/{sid}/settings", response_model=SettingsPayload)
+def read_settings(sid: str, _=Depends(verify_key)):
+    state = session_state.get(sid)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    data = state.get("settings", SettingsPayload().dict())
+    return data
 
 
