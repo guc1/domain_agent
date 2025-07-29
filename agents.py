@@ -51,6 +51,47 @@ class QuestionAgent:
                 {"id": "q2", "text": "Target audience?"},
             ]
 
+class ClarifyingAgent:
+    """Asks exactly two short follow up questions."""
+
+    def __init__(self):
+        cfg = settings.REFINEMENT_QUESTION_AGENT_CONFIG
+        self.model = genai.GenerativeModel(cfg["model"])
+        self.generation_config = genai.types.GenerationConfig(
+            temperature=cfg["temperature"]
+        )
+        self.system_prompt = (
+            "# ROLE\nYou are a brief clarifier focused on domain naming. "
+            "Ask exactly two concise questions that will help refine the request.\n\n"
+            "# RULES\n"
+            "• Output valid JSON only.\n"
+            "• Keys must be 'q1' and 'q2'.\n"
+            "• No markdown fences or extra text."
+        )
+
+    def ask(self, brief: str) -> List[Dict[str, str]]:
+        prompt = f"{self.system_prompt}\n\nUSER PROMPT:\n{brief}"
+        log.debug(
+            "--- START ClarifyingAgent PROMPT ---\n%s\n--- END ClarifyingAgent PROMPT ---",
+            prompt,
+        )
+        try:
+            response = self.model.generate_content(
+                prompt, generation_config=self.generation_config
+            )
+            log.debug(
+                "--- START ClarifyingAgent RAW RESPONSE ---\n%s\n--- END ClarifyingAgent RAW RESPONSE ---",
+                response.text,
+            )
+            data = json.loads(_clean_json_response(response.text))
+            return [{"id": "q1", "text": data["q1"]}, {"id": "q2", "text": data["q2"]}]
+        except Exception as e:
+            log.warning(f"ClarifyingAgent failed: {e}. Using fallback questions.")
+            return [
+                {"id": "q1", "text": "What detail should we focus on?"},
+                {"id": "q2", "text": "Any style preferences?"},
+            ]
+
 class PromptSynthesizerAgent:
     """Takes a brief and Q&A and synthesizes a high-quality narrative prompt."""
     def __init__(self):
@@ -336,3 +377,92 @@ class DirectionistAgent:
         except Exception as e:
             log.error(f"DirectionistAgent failed: {e}")
             return original_brief, feedback_summary
+
+class FeedbackCombinerAgent:
+    """Combines the prior prompt, user feedback and answers into a new prompt."""
+
+    def __init__(self):
+        cfg = settings.PROMPT_SYNTHESIZER_AGENT_CONFIG
+        self.model = cfg["model"]
+        self.temperature = cfg["temperature"]
+        self.ignore_answers = {"no", "none", "n/a", "", "no comment"}
+        self.system_prompt = (
+            "You improve domain brainstorming prompts.\n"
+            "Merge the previous prompt with the user's feedback and their answers\n"
+            "to two clarifying questions. Return one concise paragraph that\n"
+            "captures the updated direction. Only return the paragraph."
+        )
+
+    def _build_feedback_summary(
+        self,
+        liked_domains: Dict[str, str],
+        taken_domains: List[str],
+        disliked_domains: Dict[str, str],
+    ) -> str:
+        parts = []
+        if liked_domains:
+            parts.append(
+                "POSITIVE FEEDBACK:\n" + "\n".join([f"- Liked '{d}': {r}" for d, r in liked_domains.items()])
+            )
+        if disliked_domains:
+            parts.append(
+                "NEGATIVE FEEDBACK:\n" + "\n".join([f"- Disliked '{d}': {r}" for d, r in disliked_domains.items()])
+            )
+        if taken_domains:
+            parts.append(
+                "TAKEN BUT LIKED:\n" + ", ".join(taken_domains)
+            )
+        return "\n\n".join(parts)
+
+    def combine(
+        self,
+        previous_prompt: str,
+        answers: Dict[str, str],
+        question_map: Dict[str, str],
+        liked_domains: Optional[Dict[str, str]] = None,
+        taken_domains: Optional[List[str]] = None,
+        disliked_domains: Optional[Dict[str, str]] = None,
+    ) -> str:
+        liked_domains = liked_domains or {}
+        disliked_domains = disliked_domains or {}
+        taken_domains = taken_domains or []
+
+        feedback_summary = self._build_feedback_summary(
+            liked_domains, taken_domains, disliked_domains
+        )
+
+        qa_pairs = []
+        for qid in sorted(question_map.keys(), key=lambda k: int(k[1:])):
+            ans = answers.get(qid, "").strip()
+            if ans.lower() in self.ignore_answers:
+                continue
+            q_text = question_map.get(qid)
+            if q_text:
+                qa_pairs.append(f"Q: {q_text}\nA: {ans}")
+
+        qa_text = "\n".join(qa_pairs)
+
+        prompt = (
+            f"{self.system_prompt}\n\nPREVIOUS PROMPT:\n{previous_prompt}\n\nUSER FEEDBACK:\n{feedback_summary}\n\nCLARIFYING ANSWERS:\n{qa_text}\n\nNew Prompt:"
+        )
+
+        log.debug(
+            "--- START FeedbackCombinerAgent PROMPT ---\n%s\n--- END FeedbackCombinerAgent PROMPT ---",
+            prompt,
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            new_prompt = response.choices[0].message.content.strip()
+            log.debug(
+                "--- START FeedbackCombinerAgent RAW RESPONSE ---\n%s\n--- END FeedbackCombinerAgent RAW RESPONSE ---",
+                new_prompt,
+            )
+            return new_prompt
+        except Exception as e:
+            log.error(f"FeedbackCombinerAgent failed: {e}")
+            return previous_prompt
