@@ -7,7 +7,7 @@ load_dotenv()
 log = logging.getLogger("domain-agent.api")
 
 from fastapi import FastAPI, HTTPException, Header, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import settings
 from store import SessionStore
@@ -76,6 +76,15 @@ class SuggestionsOut(BaseModel):
     history: Dict[str, Dict]
 
 
+class SessionSettingsIn(BaseModel):
+    """Per-session configuration overrides."""
+    local_dev: bool = False
+    active_creators: List[str] = Field(default_factory=lambda: ["A", "B", "C"])
+    generation_count: int = 1
+    domain_goal: int = settings.MIN_AVAILABLE_DOMAINS
+    show_logs: bool = settings.SHOW_LOGS
+
+
 class FeedbackIn(BaseModel):
     liked: Optional[Dict[str, str]] = None
     disliked: Optional[Dict[str, str]] = None
@@ -102,6 +111,15 @@ def start_session(payload: StartSessionIn, _=Depends(verify_key)):
     return {"session_id": sid, "questions": questions}
 
 
+@app.post("/sessions/{sid}/settings")
+def configure_session(sid: str, payload: SessionSettingsIn, _=Depends(verify_key)):
+    state = session_state.get(sid)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    state["settings"] = payload.dict()
+    return {"settings": state["settings"]}
+
+
 @app.post("/sessions/{sid}/answers", response_model=PromptOut)
 def submit_answers(sid: str, payload: AnswerIn, _=Depends(verify_key)):
     state = session_state.get(sid)
@@ -122,8 +140,13 @@ async def generate_suggestions(sid: str, _=Depends(verify_key)):
     if not state.get("prompt"):
         raise HTTPException(status_code=400, detail="No prompt. Submit answers first")
 
-    desired = settings.MIN_AVAILABLE_DOMAINS
+    cfg = state.get("settings", {})
+    desired = cfg.get("domain_goal", settings.MIN_AVAILABLE_DOMAINS)
     max_attempts = settings.MAX_GENERATION_ATTEMPTS
+    counts = {}
+    active = set(cfg.get("active_creators", ["A", "B", "C"]))
+    for tag in ["A", "B", "C"]:
+        counts[tag] = cfg.get("generation_count", 1) if tag in active else 0
 
     available, taken = {}, {}
     attempts = 0
@@ -131,7 +154,7 @@ async def generate_suggestions(sid: str, _=Depends(verify_key)):
     while len(available) < desired and attempts < max_attempts:
         attempts += 1
         log.info(f"Generation attempt {attempts} for session {sid}")
-        ideas = creator_agent.create(state["prompt"], store.seen(sid))
+        ideas = creator_agent.create(state["prompt"], store.seen(sid), counts)
         store.add(sid, list(ideas.keys()))
         avail_batch, taken_batch = checker_agent.filter_available(ideas)
         if taken_batch:

@@ -24,20 +24,23 @@ Several optional variables control the behaviour of generation:
 
 ## API Overview
 
-The service mirrors the interactive CLI in four small steps:
+The service mirrors the interactive CLI in a few small steps:
 
 1. **Start a session** – `POST /sessions` with `{ "initial_brief": "..." }`.
    Returns the `session_id` and a list of question objects:
    `[{"id": "q1", "text": "..."}, ...]`.
-2. **Submit answers** – `POST /sessions/{id}/answers` with answers keyed by question ID,
- e.g. `{ "answers": {"q1": "yes"} }`.
-  Returns the synthesized prompt used for generation.
-3. **Generate suggestions** – `POST /sessions/{id}/generate`.
+2. **(Optional) Configure settings** – `POST /sessions/{id}/settings` to override
+   defaults like which creators are active, how many ideas each should generate,
+   the desired number of available domains and whether logs should be shown.
+3. **Submit answers** – `POST /sessions/{id}/answers` with answers keyed by question ID,
+   e.g. `{ "answers": {"q1": "yes"} }`.
+   Returns the synthesized prompt used for generation.
+4. **Generate suggestions** – `POST /sessions/{id}/generate`.
    Returns lists of available and taken domains along with a history of all names checked in the session.
-4. **Provide feedback** – `POST /sessions/{id}/feedback` with optional `liked` and `disliked` maps.
+5. **Provide feedback** – `POST /sessions/{id}/feedback` with optional `liked` and `disliked` maps.
    Each is a mapping of domain → reason. Returns the refined brief and a new
    list of follow-up questions.
-   Answer these questions using step 2 before generating the next batch.
+   Answer these questions using step 3 before generating the next batch.
 
 `GET /sessions/{id}/state` returns the current loop info and the domain history for that session.
 

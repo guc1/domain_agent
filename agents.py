@@ -143,12 +143,16 @@ class CreatorAgent:
             log.error(f"CreatorAgent ({tag}) failed: {e}")
             return {}
             
-    def create(self, prompt: str, previously_seen: set) -> Dict[str, str]:
-        # This method no longer splits a passed-in count.
-        # It reads the generation count for each creator directly from its configuration.
-        count_a = settings.CREATOR_A_CONFIG.get("generation_count", 0)
-        count_b = settings.CREATOR_B_CONFIG.get("generation_count", 0)
-        count_c = settings.CREATOR_C_CONFIG.get("generation_count", 0)
+    def create(self, prompt: str, previously_seen: set, counts: Optional[Dict[str, int]] = None) -> Dict[str, str]:
+        # Determine how many ideas each creator should generate for this call.
+        if counts is None:
+            count_a = settings.CREATOR_A_CONFIG.get("generation_count", 0)
+            count_b = settings.CREATOR_B_CONFIG.get("generation_count", 0)
+            count_c = settings.CREATOR_C_CONFIG.get("generation_count", 0)
+        else:
+            count_a = counts.get("A", 0)
+            count_b = counts.get("B", 0)
+            count_c = counts.get("C", 0)
 
         ideas_a = self._generate_batch(prompt, settings.CREATOR_A_CONFIG, "CreatorA", count_a)
         ideas_b = self._generate_batch(prompt, settings.CREATOR_B_CONFIG, "CreatorB", count_b)
