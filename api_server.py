@@ -13,10 +13,8 @@ import settings
 from store import SessionStore
 from agents import (
     QuestionAgent,
-    ClarifyingAgent,
     RefinementQuestionAgent,
     PromptSynthesizerAgent,
-    FeedbackCombinerAgent,
     CreatorAgent,
     CheckerAgent,
     DirectionistAgent,
@@ -29,10 +27,8 @@ API_KEY = settings.API_KEY
 store = SessionStore()
 
 question_agent = QuestionAgent()
-clarifying_agent = ClarifyingAgent()
 refinement_question_agent = RefinementQuestionAgent()
 prompt_synthesizer = PromptSynthesizerAgent()
-feedback_combiner = FeedbackCombinerAgent()
 creator_agent = CreatorAgent()
 checker_agent = CheckerAgent()
 directionist_agent = DirectionistAgent()
@@ -90,25 +86,6 @@ class RefinementOut(BaseModel):
     questions: List[Question]
 
 
-class ClarifyIn(BaseModel):
-    prompt: str
-
-
-class ClarifyOut(BaseModel):
-    questions: List[Question]
-
-
-class CombineIn(BaseModel):
-    previous_prompt: str
-    answers: Dict[str, str]
-    question_map: Dict[str, str]
-    liked_domains: Optional[Dict[str, str]] = None
-    disliked_domains: Optional[Dict[str, str]] = None
-    taken_domains: Optional[List[str]] = None
-
-
-class CombineOut(BaseModel):
-    prompt: str
 
 
 @app.post("/sessions", response_model=StartSessionOut)
@@ -206,20 +183,3 @@ def get_state(sid: str, _=Depends(verify_key)):
     return state_copy
 
 
-@app.post("/clarify", response_model=ClarifyOut)
-def clarify(payload: ClarifyIn, _=Depends(verify_key)):
-    questions = clarifying_agent.ask(payload.prompt)
-    return {"questions": questions}
-
-
-@app.post("/combine", response_model=CombineOut)
-def combine(payload: CombineIn, _=Depends(verify_key)):
-    prompt = feedback_combiner.combine(
-        payload.previous_prompt,
-        payload.answers,
-        payload.question_map,
-        payload.liked_domains,
-        payload.taken_domains,
-        payload.disliked_domains,
-    )
-    return {"prompt": prompt}

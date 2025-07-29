@@ -30,24 +30,17 @@ The service mirrors the interactive CLI in four small steps:
    Returns the `session_id` and a list of question objects:
    `[{"id": "q1", "text": "..."}, ...]`.
 2. **Submit answers** – `POST /sessions/{id}/answers` with answers keyed by question ID,
-   e.g. `{ "answers": {"q1": "yes"} }`.
-   Returns the synthesized prompt used for generation.
+ e.g. `{ "answers": {"q1": "yes"} }`.
+  Returns the synthesized prompt used for generation.
 3. **Generate suggestions** – `POST /sessions/{id}/generate`.
    Returns lists of available and taken domains along with a history of all names checked in the session.
 4. **Provide feedback** – `POST /sessions/{id}/feedback` with optional `liked` and `disliked` maps.
-   Each is a mapping of domain → reason. Returns the refined brief and another list of question objects.
+   Each is a mapping of domain → reason. Returns the refined brief and a new
+   list of follow-up questions.
+   Answer these questions using step 2 before generating the next batch.
 
 `GET /sessions/{id}/state` returns the current loop info and the domain history for that session.
 
-Additional helpers:
-
-- `POST /clarify` with `{ "prompt": "..." }` returns two clarifying
-  questions.
-- `POST /combine` combines the previous prompt and user feedback
-  into a new prompt. The payload is `{ "previous_prompt": "...",
-  "answers": {...}, "question_map": {...}, "liked_domains": {...},
-  "disliked_domains": {...}, "taken_domains": ["..."] }` and the
-  response contains the refined `prompt`.
 
 ## Next.js Client
 
