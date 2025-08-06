@@ -30,10 +30,38 @@ class QuestionAgent:
         cfg = settings.QUESTION_AGENT_CONFIG
         self.model = genai.GenerativeModel(cfg["model"])
         self.generation_config = genai.types.GenerationConfig(temperature=cfg["temperature"])
-        self.system_prompt = "# ROLE\nYou are a clarifier. Your only task is to ask follow-up questions that will let a\nlater agent generate the best possible domain names.\n\n# RULES\n• Output valid JSON only.\n• Keys must be \"q1\", \"q2\", … in order.\n• No markdown fences or prose.\n• Ask 2–10 questions – the fewest that fully clarify the brief.\n\n# GUIDELINES  (topics you may cover)\n• Brand / company match                • Desired TLD(s)\n• Tone or vibe                         • Length limits\n• Keywords to include / avoid          • Real-word vs. abstract\n• Examples the user likes (but are taken)\n• Legal / geographic constraints"
+        self.system_prompt = """
+# ROLE
+You are a clarifier that—by asking follow-up questions about the exact type of domain name the user wants—will help the later AI agent fully understand their needs. Keep your language concise but precise.
+
+# RULES
+• Output valid JSON only.
+• Keys must be "q1", "q2", … in order.
+• No markdown fences or prose.
+• Ask exactly 10 questions.
+• Phrase every question as a full sentence ending with a question mark (e.g., "What is the name of the company?").
+
+# GUIDELINES (always ask these unless already provided)
+• Company name (if any)  
+• Desired TLD(s) (e.g. .com, .net, .io)  
+• Preferred length (short, medium, long)  
+• Legal or geographic constraints
+
+# GUIDELINES (choose 3 of these, plus craft any niche-specific creative questions to hit the sweet spot)
+• Tone or vibe (e.g. modern, playful)  
+• Keywords to include/avoid (e.g. “yoga”, “wellness”)  
+• Real-word vs. abstract style  
+• Examples you like (even if taken)  
+• [Your own unique, niche-driven question]
+
+> **Tip:** For each question, include brief options in parentheses to guide the user (customized when possible).
+
+USER'S INITIAL BRIEF: "{brief}"  
+Make each question tailored to this brief so you capture all the information needed for the AI to generate perfect domain ideas.
+"""
 
     def ask(self, brief: str) -> List[Dict[str, str]]:
-        prompt = f"{self.system_prompt}\n\nUSER'S INITIAL BRIEF: \"{brief}\""
+        prompt = self.system_prompt.format(brief=brief)
         log.debug("--- START QuestionAgent PROMPT ---\n%s\n--- END QuestionAgent PROMPT ---", prompt)
         try:
             response = self.model.generate_content(prompt, generation_config=self.generation_config)
@@ -47,8 +75,8 @@ class QuestionAgent:
         except Exception as e:
             log.warning(f"QuestionAgent failed: {e}. Falling back.")
             return [
-                {"id": "q1", "text": "Primary purpose?"},
-                {"id": "q2", "text": "Target audience?"},
+                {"id": "q1", "text": "What is the primary purpose?"},
+                {"id": "q2", "text": "Who is the target audience?"},
             ]
 
 class ClarifyingAgent:
@@ -97,7 +125,20 @@ class PromptSynthesizerAgent:
     def __init__(self):
         cfg = settings.PROMPT_SYNTHESIZER_AGENT_CONFIG
         self.model, self.temperature = cfg["model"], cfg["temperature"]
-        self.system_prompt = "You are a master prompt engineer. Your task is to synthesize a user's brief and a set of questions and answers into a single, cohesive, and well-written narrative brief. This new brief will be given to a creative AI to generate domain names. Transform the raw Q&A into a descriptive paragraph. Infer the user's core desires from their answers. Only use the information provided; do not add new details."
+        self.system_prompt = """
+You are a master prompt engineer operating within a multi-agent domain-naming framework. Your goal is to synthesize the user’s original brief plus their answers to clarifying questions into one clear, cohesive narrative brief. This brief will drive the creative AI that actually generates domain names.
+
+• Analyze the user’s inputs carefully to identify their core desires and priorities.  
+• Emphasize the elements they care most about, but stay true only to the information provided—do not invent new details.  
+• Strive to satisfy all explicit requests (tone, keywords, constraints, etc.), while leaving room for creative interpretation by the next agent.
+
+Transform the raw Q&A into a single descriptive paragraph that captures:
+- The user’s overarching objective  
+- Any required keywords, styles, or constraints  
+- The vibe or nuance they want the AI to preserve  
+
+Only use the answers and brief given. Make it concise, narrative-driven, and ready for a domain-name generator to follow.
+"""
         self.ignore_answers = {'no', 'none', 'n/a', '', 'no comment'}
 
     def synthesize(self, brief: str, answers: Dict[str, str], question_map: Dict[str, str]) -> str:
@@ -129,7 +170,30 @@ class CreatorAgent:
     """Generates domain name ideas from three models, tracking attribution."""
     def _generate_batch(self, prompt: str, config: dict, tag: str, count: int) -> Dict[str, str]:
         if count <= 0: return {}
-        system_content = f"You are a creative domain name generator. Based on the user's detailed brief, provide a list of exactly {count} domain name ideas. Your output must be a single, valid JSON object containing one key which is an array of strings, like {{\"domains\": [\"idea1.com\", \"idea2.net\"]}}. Do not add any other text or explanation."
+        if tag.endswith("A"):
+            system_content = f"""
+    You are Creator A: the Balanced Domain Name Generator.
+    Your task is to deliver a list of straightforward, reliable domain names that honor the user’s brief and preferences. Think of how Apple landed on “iPhone”—simple, elegant, immediately understandable.
+    • Produce exactly {count} `.com`-style names (or the TLDs the user specified).
+    • Keep each name original yet familiar—safe bets that feel “just right.”
+    • Respond with a JSON object {{"domains": [names]}} and no extra text.
+    """
+        elif tag.endswith("B"):
+            system_content = f"""
+    You are Creator B: the Straight-Shooter Domain Name Generator.
+    Your job is to follow the user’s instructions with laser focus—even if it means suggesting names that are obvious or likely already taken. Be as literal as Google was when it named “Google Search.”
+    • Provide exactly {count} names that align verbatim with the brief’s keywords and constraints.
+    • Emphasize clarity over creativity—if it’s descriptive, suggest it.
+    • Respond with a JSON object {{"domains": [names]}} and no extra text.
+    """
+        else:  # CreatorC
+            system_content = f"""
+    You are Creator C: the Free-Spirit Domain Name Generator.
+    Your mission is to push the boundaries—generate names as inventively as Salvador Dalí painted “The Persistence of Memory.”
+    • Produce exactly {count} domain ideas that still respect the user’s core requirements (tone, keywords, TLDs).
+    • Dare to combine unusual words or coined terms—edge-of-possibility suggestions.
+    • Respond with a JSON object {{"domains": [names]}} and no extra text.
+    """
         log.debug("--- START %s PROMPT ---\n[SYSTEM]\n%s\n\n[USER]\n%s\n--- END %s PROMPT ---", tag, system_content, prompt, tag)
         try:
             response = client.chat.completions.create(model=config["model"], temperature=config["temperature"], messages=[{"role": "system", "content": system_content}, {"role": "user", "content": prompt}], response_format={"type": "json_object"})
@@ -316,7 +380,20 @@ class RefinementQuestionAgent:
         cfg = settings.REFINEMENT_QUESTION_AGENT_CONFIG
         self.model = genai.GenerativeModel(cfg["model"])
         self.generation_config = genai.types.GenerationConfig(temperature=cfg["temperature"])
-        self.system_prompt = "# ROLE\nYou are a domain name strategy consultant..."
+        self.system_prompt = """
+# ROLE
+You are a domain name strategy consultant. Compare the previous prompt’s generated output feedback to the new refined goal. Identify patterns the user liked or disliked, and craft two targeted questions to confirm positive patterns or rule out negative ones.
+
+# RULES
+• Output valid JSON only.
+• Keys must be "q1" and "q2".
+• No markdown fences or extra text.
+
+# GUIDELINES
+• Base each question on the difference between feedback and the refined brief.
+• One question should validate a pattern they liked; the other should clarify or discard something they disliked.
+• Include brief examples or options in parentheses to guide the user.
+"""
     def ask(self, refined_brief: str, feedback_summary: str) -> List[Dict[str, str]]:
         prompt = (f"{self.system_prompt}\n\n# PREVIOUS FEEDBACK SUMMARY\n{feedback_summary}\n\n# NEW REFINED GOAL\n\"{refined_brief}\"\n\nBased on all the above, ask your two follow-up questions now.")
         log.debug("--- START RefinementQuestionAgent PROMPT ---\n%s\n--- END RefinementQuestionAgent PROMPT ---", prompt)
@@ -399,12 +476,24 @@ class FeedbackCombinerAgent:
         self.model = cfg["model"]
         self.temperature = cfg["temperature"]
         self.ignore_answers = {"no", "none", "n/a", "", "no comment"}
-        self.system_prompt = (
-            "You improve domain brainstorming prompts.\n"
-            "Merge the previous prompt with the user's feedback and their answers\n"
-            "to two clarifying questions. Return one concise paragraph that\n"
-            "captures the updated direction. Only return the paragraph."
-        )
+        self.system_prompt = """
+# ROLE
+You are the final Prompt Synthesizer in our domain-naming pipeline. Your job is to merge:
+  1) the previous prompt that generated candidate domains  
+  2) the refined brief (post-feedback optimization)  
+  3) the user’s like/dislike feedback patterns  
+  4) the answers to the two follow-up questions  
+
+Into one concise narrative “New Prompt” that:
+  • Reaffirms patterns the user confirmed  
+  • Omits or deprioritizes patterns they rejected  
+  • Incorporates any new nuance from the follow-up answers  
+  • Prepares the next creative agent to generate domain ideas
+
+# RULES
+• Output only the final paragraph (no extra text).  
+• Stay strictly within the info given—don’t invent details.  
+"""
 
     def _build_feedback_summary(
         self,
@@ -434,6 +523,7 @@ class FeedbackCombinerAgent:
         question_map: Dict[str, str],
         liked_domains: Optional[Dict[str, str]] = None,
         taken_domains: Optional[List[str]] = None,
+        refined_brief: Optional[str] = None,
         disliked_domains: Optional[Dict[str, str]] = None,
     ) -> str:
         liked_domains = liked_domains or {}
@@ -455,20 +545,27 @@ class FeedbackCombinerAgent:
 
         qa_text = "\n".join(qa_pairs)
 
-        prompt = (
-            f"{self.system_prompt}\n\nPREVIOUS PROMPT:\n{previous_prompt}\n\nUSER FEEDBACK:\n{feedback_summary}\n\nCLARIFYING ANSWERS:\n{qa_text}\n\nNew Prompt:"
+        context = (
+            f"# PREVIOUS PROMPT\n{previous_prompt}\n\n"
+            f"# REFINED BRIEF\n{refined_brief}\n\n"
+            f"# USER FEEDBACK\n{feedback_summary}\n\n"
+            f"# CLARIFYING ANSWERS\n{qa_text}\n\n"
+            "New Prompt:"
         )
 
         log.debug(
-            "--- START FeedbackCombinerAgent PROMPT ---\n%s\n--- END FeedbackCombinerAgent PROMPT ---",
-            prompt,
+            "--- START FeedbackCombinerAgent CONTEXT ---\n%s\n--- END FeedbackCombinerAgent CONTEXT ---",
+            context,
         )
 
         try:
             response = client.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": context},
+                ],
             )
             new_prompt = response.choices[0].message.content.strip()
             log.debug(
